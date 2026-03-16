@@ -1,0 +1,11 @@
+{
+  "default_account": "default",
+  "accounts": {
+    "default": {
+      "alias": "Default",
+      "browser": "chromium",
+      "profile_dir": "../tmp/profiles/default",
+      "debug_port": 9222
+    }
+  }
+}

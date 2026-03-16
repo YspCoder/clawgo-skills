@@ -1,0 +1,17 @@
+{
+  "default_account": "default",
+  "accounts": {
+    "default": {
+      "alias": "Default",
+      "browser": "chromium",
+      "profile_dir": "/Users/lpf/Desktop/project/clawgo-skills/playwright-browser-ops/tmp/profiles/default",
+      "debug_port": 9222
+    },
+    "shop": {
+      "alias": "店铺号",
+      "browser": "chromium",
+      "profile_dir": "/Users/lpf/Desktop/project/clawgo-skills/playwright-browser-ops/tmp/profiles/shop",
+      "debug_port": 9333
+    }
+  }
+}
