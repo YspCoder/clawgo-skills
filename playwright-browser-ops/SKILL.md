@@ -27,6 +27,8 @@ Primary script:
 
 - `scripts/default_ops.py`
 - `scripts/xiaohongshu_ops.py` for Xiaohongshu-specific login and publishing flows
+- `scripts/bilibili_ops.py` for Bilibili login state and video publishing through `biliup`
+- `scripts/douyin_ops.py` for Douyin creator-center login and video publishing through Playwright
 - `scripts/browser_manager.py` for named accounts, isolated browser profiles, and tracked browser instances
 - `scripts/media_downloader.py` for downloading remote images or videos before browser upload
 
@@ -47,6 +49,10 @@ python3 scripts/xiaohongshu_ops.py --account main --launch-managed-browser post-
 python3 scripts/xiaohongshu_ops.py --account main --launch-managed-browser check-login
 python3 scripts/xiaohongshu_ops.py --account main --launch-managed-browser publish-images --title "标题" --content "正文" --images /abs/path/1.jpg /abs/path/2.jpg
 python3 scripts/xiaohongshu_ops.py --account main --launch-managed-browser publish-text-image --title "标题" --content $'正文第一段\n正文第二段\n#标签A #标签B' --publish --verify-publish
+python3 scripts/bilibili_ops.py --account main login
+python3 scripts/bilibili_ops.py --account main publish-video --title "标题" --content "简介" --tag 自动化 --video /abs/path/demo.mp4
+python3 scripts/douyin_ops.py --account main login
+python3 scripts/douyin_ops.py --account main publish-video --title "标题" --content "简介" --tag 自动化 --video /abs/path/demo.mp4
 ```
 
 Environment requirements:
@@ -55,6 +61,7 @@ Environment requirements:
 - `playwright` package installed in the runtime
 - Browser binaries installed with `python3 -m playwright install`
 - `requests` package installed when workflows need remote media download
+- `biliup` package installed when workflows need Bilibili upload support
 
 ## Default Operations
 
@@ -85,6 +92,13 @@ Use the reference file [references/default-operations.md](references/default-ope
 - Script extension: add selectors or steps to `scripts/default_ops.py` when the default flags are not enough.
 - Platform integration: add product-specific scripts such as `scripts/xiaohongshu_ops.py` while keeping the base skill generic.
 
+## Cross-Platform Publish Rules
+
+- Keep real publishing opt-in with explicit `--publish`.
+- Prefer persistent profiles or account-scoped cookie files so manual login survives across runs.
+- When a login flow produces a QR image path, return it and show that image to the user instead of only describing it in text.
+- For publish verification, prefer second-order checks such as creator-manage lists,稿件列表, or object counts over simple post-click URL changes.
+
 ## Xiaohongshu Text-Image Notes
 
 - `publish-text-image` is for Xiaohongshu's `文字配图` flow in creator center.
@@ -97,4 +111,7 @@ Use the reference file [references/default-operations.md](references/default-ope
 ## References
 
 - Default operation recipes: [references/default-operations.md](references/default-operations.md)
+- Bilibili integration notes: [references/bilibili.md](references/bilibili.md)
+- Douyin integration notes: [references/douyin.md](references/douyin.md)
 - Xiaohongshu integration notes: [references/xiaohongshu.md](references/xiaohongshu.md)
+- Platform expansion research: [references/platform-expansion-research.md](references/platform-expansion-research.md)
