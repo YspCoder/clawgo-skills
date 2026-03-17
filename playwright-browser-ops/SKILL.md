@@ -46,6 +46,7 @@ python3 scripts/xiaohongshu_ops.py --account main --launch-managed-browser get-f
 python3 scripts/xiaohongshu_ops.py --account main --launch-managed-browser post-comment-to-feed --feed-id FEED_ID --xsec-token TOKEN --content "写得很实用"
 python3 scripts/xiaohongshu_ops.py --account main --launch-managed-browser check-login
 python3 scripts/xiaohongshu_ops.py --account main --launch-managed-browser publish-images --title "标题" --content "正文" --images /abs/path/1.jpg /abs/path/2.jpg
+python3 scripts/xiaohongshu_ops.py --account main --launch-managed-browser publish-text-image --title "标题" --content $'正文第一段\n正文第二段\n#标签A #标签B' --publish --verify-publish
 ```
 
 Environment requirements:
@@ -83,6 +84,15 @@ Use the reference file [references/default-operations.md](references/default-ope
 - Lightweight extraction: read heading text or a selector value from the loaded page.
 - Script extension: add selectors or steps to `scripts/default_ops.py` when the default flags are not enough.
 - Platform integration: add product-specific scripts such as `scripts/xiaohongshu_ops.py` while keeping the base skill generic.
+
+## Xiaohongshu Text-Image Notes
+
+- `publish-text-image` is for Xiaohongshu's `文字配图` flow in creator center.
+- The generated text-image cards must not include `#话题` lines.
+- Hashtags stay only in the final publish form content after image generation returns to the main editor.
+- The script pauses before and after `再写一张` so each card receives its own text instead of collapsing into the first card.
+- On the preview-theme step, the script picks one visible template from the right-side theme list before clicking `下一步`.
+- After returning to the publish form, the script fills title and content again so the final post metadata stays complete.
 
 ## References
 

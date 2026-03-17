@@ -20,6 +20,7 @@ Scope included here:
 - Post top-level comments
 - Reply to matched comments
 - Creator-center image post publishing
+- Creator-center text-image publishing
 - Creator-center video post publishing
 - Remote media download before upload
 - Post-publish verification and note link extraction
@@ -54,11 +55,20 @@ python3 scripts/xiaohongshu_ops.py --account main --launch-managed-browser note-
 python3 scripts/xiaohongshu_ops.py --account main --launch-managed-browser post-comment-to-feed --feed-id FEED_ID --xsec-token TOKEN --content "写得很实用"
 python3 scripts/xiaohongshu_ops.py --account main --launch-managed-browser respond-comment --feed-id FEED_ID --xsec-token TOKEN --comment-author "某用户" --content "谢谢反馈"
 python3 scripts/xiaohongshu_ops.py --account main --launch-managed-browser publish-images --title "标题" --content "正文" --images /abs/path/1.jpg
+python3 scripts/xiaohongshu_ops.py --account main --launch-managed-browser publish-text-image --title "标题" --content $'正文第一段\n正文第二段\n#标签A #标签B' --publish --verify-publish
 python3 scripts/xiaohongshu_ops.py --account main --launch-managed-browser publish-images --title "标题" --content "正文" --image-urls "https://example.com/1.jpg" "https://example.com/2.jpg" --publish --verify-publish
 python3 scripts/xiaohongshu_ops.py --account alt publish-video --title "标题" --content "正文" --video-url "https://example.com/demo.mp4" --publish --verify-publish
 python3 scripts/xiaohongshu_ops.py --account alt publish-video --title "标题" --content "正文" --video /abs/path/demo.mp4
 python3 scripts/browser_manager.py kill --account main
 ```
+
+Text-image publishing rules:
+
+- `publish-text-image` writes only title and body text into the generated image cards.
+- `#话题` lines are excluded from the image-card text on purpose.
+- The script clicks `再写一张` with extra delay so Xiaohongshu has time to switch to the new card.
+- On the preview page, the script selects a visible theme card from the right-side list before clicking `下一步`.
+- After the flow returns to the publish form, the script fills title and content again, and only there appends the hashtag lines back into the final content.
 
 Recommended usage:
 
@@ -72,6 +82,7 @@ Recommended usage:
 8. Use `content-data` to fetch creator performance rows from the data-analysis backend while logged in.
 9. Use `get-feed-detail` before interaction if the target note needs verification.
 10. Use `post-comment-to-feed` for top-level comments and `respond-comment` when you need targeted replies.
-11. Run `publish-images` or `publish-video` with `--publish` only after the user confirms the final content.
-12. Add `--verify-publish` when you need a stronger post-publish success check and note link extraction.
-13. Save screenshots during preview or failure handling for debugging.
+11. Use `publish-text-image` for `文字配图`, and keep hashtags in the input content only for the final publish form rather than the generated cards.
+12. Run `publish-images`, `publish-text-image`, or `publish-video` with `--publish` only after the user confirms the final content.
+13. Add `--verify-publish` when you need a stronger post-publish success check and note link extraction.
+14. Save screenshots during preview or failure handling for debugging.

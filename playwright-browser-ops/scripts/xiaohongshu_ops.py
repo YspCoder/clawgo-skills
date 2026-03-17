@@ -10,6 +10,8 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import math
+import random
 import subprocess
 import sys
 import time
@@ -48,6 +50,7 @@ SELECTORS = {
     "bookmark_button": "button:has-text('收藏'), [class*='collect'], [class*='bookmark']",
     "comment_input": "div.input-box div.content-edit, div.input-box [contenteditable='true'], div.input-box",
     "comment_submit": "div.bottom button.submit, div.bottom button[class*='submit'], button.submit, button[type='submit']",
+    "text_image_button": "文字配图",
 }
 
 
@@ -126,6 +129,9 @@ def build_parser() -> argparse.ArgumentParser:
     add_publish_args(images)
     images.add_argument("--images", nargs="*", default=[], help="Local image paths")
     images.add_argument("--image-urls", nargs="*", default=[], help="Remote image URLs to download before upload")
+
+    text_image = subparsers.add_parser("publish-text-image", help="Create a Xiaohongshu text-image note without uploading local media")
+    add_publish_args(text_image)
 
     video = subparsers.add_parser("publish-video", help="Publish or preview a video post")
     add_publish_args(video)
@@ -253,11 +259,15 @@ def launch_context(args: argparse.Namespace):
     return playwright_cm, context, page, meta
 
 
+def current_page_logged_in(page) -> bool:
+    text = page.locator("body").inner_text(timeout=5000)
+    return not any(keyword in text for keyword in XHS_LOGIN_KEYWORDS)
+
+
 def is_logged_in(page) -> bool:
     page.goto(XHS_HOME_URL, wait_until="domcontentloaded")
     page.wait_for_load_state("networkidle")
-    text = page.locator("body").inner_text(timeout=5000)
-    return not any(keyword in text for keyword in XHS_LOGIN_KEYWORDS)
+    return current_page_logged_in(page)
 
 
 def save_screenshot(page, screenshot: str | None) -> str | None:
@@ -269,7 +279,27 @@ def save_screenshot(page, screenshot: str | None) -> str | None:
 
 
 def click_tab_by_text(page, text: str) -> None:
-    page.get_by_text(text, exact=False).first.click()
+    clicked = page.evaluate(
+        """(targetText) => {
+            const normalize = (value) => (value || '').replace(/\\s+/g, ' ').trim();
+            const candidates = Array.from(document.querySelectorAll('.creator-tab, [role="tab"], button, div'));
+            for (const el of candidates) {
+                if (!(el instanceof HTMLElement) || el.offsetParent === null) continue;
+                const text = normalize(el.innerText || el.textContent || '');
+                if (text !== targetText) continue;
+                const rect = el.getBoundingClientRect();
+                if (rect.width < 20 || rect.height < 12) continue;
+                if (rect.x < -100 || rect.y < -100) continue;
+                el.scrollIntoView({ block: 'center', inline: 'center' });
+                el.click();
+                return true;
+            }
+            return false;
+        }""",
+        text,
+    )
+    if not clicked:
+        raise RuntimeError(f"tab not found or not clickable: {text}")
     page.wait_for_timeout(1200)
 
 
@@ -292,6 +322,9 @@ def resolve_title_input(page):
                 return locator
         except Exception:
             continue
+    candidates = visible_editable_candidates(page)
+    if candidates:
+        return candidates[0]
     raise RuntimeError("title input not found")
 
 
@@ -307,7 +340,29 @@ def resolve_content_editor(page):
                 return locator
         except Exception:
             continue
+    candidates = visible_editable_candidates(page)
+    if len(candidates) >= 2:
+        return candidates[-1]
+    if candidates:
+        return candidates[0]
     raise RuntimeError("content editor not found")
+
+
+def visible_editable_candidates(page):
+    candidates = []
+    locator = page.locator("input:not([type='file']), textarea, [contenteditable='true'], [role='textbox']")
+    try:
+        count = locator.count()
+    except Exception:
+        count = 0
+    for i in range(count):
+        el = locator.nth(i)
+        try:
+            if el.is_visible(timeout=500):
+                candidates.append(el)
+        except Exception:
+            continue
+    return candidates
 
 
 def fill_editor(locator, content: str) -> None:
@@ -332,6 +387,179 @@ def fill_editor(locator, content: str) -> None:
         }""",
         content,
     )
+
+
+def click_button_by_text(page, text: str) -> bool:
+    rect = page.evaluate(
+        """(targetText) => {
+            const normalize = (value) => (value || '').replace(/\\s+/g, ' ').trim();
+            const nodes = Array.from(document.querySelectorAll('button, div, span, a'));
+            for (const el of nodes) {
+                if (!(el instanceof HTMLElement) || el.offsetParent === null) continue;
+                const value = normalize(el.innerText || el.textContent || '');
+                if (value !== targetText) continue;
+                let target = el;
+                let current = el;
+                for (let depth = 0; depth < 5 && current; depth += 1) {
+                    const rect = current.getBoundingClientRect();
+                    if (
+                        current instanceof HTMLElement &&
+                        current.offsetParent !== null &&
+                        rect.width >= 30 &&
+                        rect.height >= 20 &&
+                        rect.width <= 320 &&
+                        rect.height <= 320
+                    ) {
+                        target = current;
+                        break;
+                    }
+                    current = current.parentElement;
+                }
+                if (!(target instanceof HTMLElement) || target.offsetParent === null) continue;
+                const rect = target.getBoundingClientRect();
+                if (rect.width < 18 || rect.height < 10) continue;
+                if (rect.x < -100 || rect.y < -100) continue;
+                target.scrollIntoView({ block: 'center', inline: 'center' });
+                return { x: rect.x, y: rect.y, width: rect.width, height: rect.height };
+            }
+            return null;
+        }""",
+        text,
+    )
+    if not rect:
+        return False
+    page.mouse.click(float(rect["x"]) + float(rect["width"]) / 2, float(rect["y"]) + float(rect["height"]) / 2)
+    page.wait_for_timeout(500)
+    return True
+
+
+def split_text_image_cards(title: str, content: str, max_chars: int = 85) -> list[str]:
+    title = title.strip()
+    content = content.strip()
+    lines = [line.strip() for line in content.splitlines() if line.strip()]
+    body_lines = [line for line in lines if not line.startswith("#")]
+    paragraphs = [p.strip() for p in [title, *body_lines] if p.strip()]
+    cards: list[str] = []
+    current = ""
+    for para in paragraphs:
+        candidate = f"{current}\n{para}".strip() if current else para
+        if len(candidate) <= max_chars:
+            current = candidate
+            continue
+        if current:
+            cards.append(current)
+        if len(para) <= max_chars:
+            current = para
+            continue
+        start = 0
+        while start < len(para):
+            chunk = para[start : start + max_chars]
+            cards.append(chunk)
+            start += max_chars
+        current = ""
+    if current:
+        cards.append(current)
+    return cards or [title or content]
+
+
+def extract_hashtag_lines(content: str) -> list[str]:
+    return [line.strip() for line in content.splitlines() if line.strip().startswith("#")]
+
+
+def build_publish_content(content: str) -> str:
+    lines = [line.strip() for line in content.splitlines() if line.strip()]
+    body_lines = [line for line in lines if not line.startswith("#")]
+    hashtag_lines = [line for line in lines if line.startswith("#")]
+    if hashtag_lines:
+        body_lines.append(" ".join(hashtag_lines))
+    return "\n".join(body_lines).strip()
+
+
+def resolve_text_image_editor(page):
+    candidates = visible_editable_candidates(page)
+    if candidates:
+        return candidates[-1]
+    raise RuntimeError("text-image editor not found")
+
+
+def prepare_text_image_cards(page, title: str, content: str) -> list[str]:
+    cards = split_text_image_cards(title, content)
+    fill_editor(resolve_text_image_editor(page), cards[0])
+    for card_text in cards[1:]:
+        page.wait_for_timeout(900)
+        if not click_button_by_text(page, "再写一张"):
+            raise RuntimeError("add-card button not found for text-image mode")
+        page.wait_for_timeout(1800)
+        fill_editor(resolve_text_image_editor(page), card_text)
+        page.wait_for_timeout(700)
+    return cards
+
+
+def pick_random_preview_theme(page) -> bool:
+    try:
+        cards = page.locator("div, button, li").filter(has_text="换配色")
+        count = cards.count()
+    except Exception:
+        count = 0
+    if count <= 0:
+        return False
+    index = random.randrange(count)
+    card = cards.nth(index)
+    try:
+        card.scroll_into_view_if_needed(timeout=2000)
+    except Exception:
+        pass
+    try:
+        card.click(timeout=2000)
+        page.wait_for_timeout(1000)
+        return True
+    except Exception:
+        return False
+
+
+def fill_publish_form(page, title: str, content: str) -> None:
+    wait_for_publish_button(page)
+    fill_editor(resolve_title_input(page), title)
+    page.wait_for_timeout(300)
+    fill_editor(resolve_content_editor(page), build_publish_content(content))
+
+
+def generate_text_image(page, timeout_ms: int, title: str, content: str) -> None:
+    if not click_button_by_text(page, "生成图片"):
+        raise RuntimeError("generate-image button not found")
+    deadline = time.time() + max(8.0, timeout_ms / 1000)
+    preview_theme_picked = False
+    while time.time() < deadline:
+        try:
+            next_step_ready = page.evaluate(
+                """() => {
+                    const normalize = (value) => (value || '').replace(/\\s+/g, ' ').trim();
+                    const nodes = Array.from(document.querySelectorAll('button, div, span, input, textarea, a'));
+                    for (const el of nodes) {
+                        if (!(el instanceof HTMLElement) || el.offsetParent === null) continue;
+                        const text = normalize(el.innerText || el.textContent || '');
+                        const placeholder = (el.getAttribute('placeholder') || '').trim();
+                if (text === '下一步' || text === '完成') return 'next';
+                if (text === '发布' || text.includes('填写标题会有更多赞哦') || placeholder.includes('填写标题') || placeholder.includes('输入正文描述')) return 'publish';
+                    }
+                    return '';
+                }"""
+            )
+            if next_step_ready == "next":
+                if not preview_theme_picked:
+                    preview_theme_picked = pick_random_preview_theme(page)
+                if not click_button_by_text(page, "下一步"):
+                    if not click_button_by_text(page, "完成"):
+                        raise RuntimeError("background-step next button not found")
+                page.wait_for_timeout(2500)
+                continue
+            if next_step_ready == "publish":
+                fill_publish_form(page, title, content)
+                return
+        except Exception:
+            pass
+        page.wait_for_timeout(1000)
+    raise RuntimeError("text-image generation did not return to publish form in time")
 
 
 def wait_for_publish_button(page) -> None:
@@ -991,15 +1219,13 @@ def run_login(page, args: argparse.Namespace) -> dict[str, Any]:
     page.wait_for_load_state("networkidle")
     save_screenshot(page, args.screenshot)
     deadline = time.time() + max(1, args.wait_seconds)
-    logged_in = is_logged_in(page)
+    logged_in = current_page_logged_in(page)
     while time.time() < deadline and not logged_in:
         time.sleep(2)
         try:
-            page.reload(wait_until="domcontentloaded")
-            page.wait_for_load_state("networkidle")
+            logged_in = current_page_logged_in(page)
         except Exception:
             pass
-        logged_in = is_logged_in(page)
     return {
         "ok": True,
         "action": "login",
@@ -1231,36 +1457,63 @@ def navigate_creator(page) -> None:
     page.wait_for_load_state("networkidle")
 
 
+def run_publish_flow(page, args: argparse.Namespace, media_files: list[str] | None = None, use_text_image: bool = False) -> dict[str, Any]:
+    navigate_creator(page)
+    click_tab_by_text(page, SELECTORS["image_text_tab_text"])
+    if use_text_image:
+        if not click_button_by_text(page, SELECTORS["text_image_button"]):
+            raise RuntimeError("text-image button not found")
+        page.wait_for_timeout(2000)
+        cards = prepare_text_image_cards(page, args.title, args.content)
+        generate_text_image(page, args.timeout_ms, args.title, args.content)
+    elif media_files:
+        resolve_upload_input(page).set_input_files(media_files)
+        page.wait_for_timeout(2500)
+        cards = []
+    else:
+        cards = []
+
+    fill_publish_form(page, args.title, args.content)
+    wait_for_publish_button(page)
+    save_screenshot(page, args.screenshot)
+    verification = {"verified": False, "note_link": None, "signal": None}
+    if args.publish:
+        click_publish(page)
+        page.wait_for_timeout(2500)
+        if args.verify_publish:
+            verification = verify_publish_result(page, args.timeout_ms)
+            save_screenshot(page, args.screenshot)
+    return {
+        "ok": True,
+        "published": bool(args.publish),
+        "verified_publish": verification["verified"],
+        "publish_signal": verification["signal"],
+        "note_link": verification["note_link"],
+        "final_url": page.url,
+        "files": media_files or [],
+        "text_image_cards": cards,
+        "screenshot": args.screenshot,
+    }
+
+
 def run_publish_images(page, args: argparse.Namespace) -> dict[str, Any]:
     images, cleanup_dir = resolve_image_inputs(args)
     try:
-        navigate_creator(page)
-        click_tab_by_text(page, SELECTORS["image_text_tab_text"])
-        resolve_upload_input(page).set_input_files(images)
-        resolve_title_input(page).fill(args.title)
-        fill_editor(resolve_content_editor(page), args.content)
-        wait_for_publish_button(page)
-        save_screenshot(page, args.screenshot)
-        verification = {"verified": False, "note_link": None, "signal": None}
-        if args.publish:
-            click_publish(page)
-            page.wait_for_timeout(2500)
-            if args.verify_publish:
-                verification = verify_publish_result(page, args.timeout_ms)
-                save_screenshot(page, args.screenshot)
+        payload = run_publish_flow(page, args, media_files=images, use_text_image=False)
         return {
-            "ok": True,
+            **payload,
             "action": "publish-images",
-            "published": bool(args.publish),
-            "verified_publish": verification["verified"],
-            "publish_signal": verification["signal"],
-            "note_link": verification["note_link"],
-            "final_url": page.url,
-            "files": images,
-            "screenshot": args.screenshot,
         }
     finally:
         cleanup_download_dir(cleanup_dir)
+
+
+def run_publish_text_image(page, args: argparse.Namespace) -> dict[str, Any]:
+    payload = run_publish_flow(page, args, media_files=None, use_text_image=True)
+    return {
+        **payload,
+        "action": "publish-text-image",
+    }
 
 
 def run_publish_video(page, args: argparse.Namespace) -> dict[str, Any]:
@@ -1269,7 +1522,8 @@ def run_publish_video(page, args: argparse.Namespace) -> dict[str, Any]:
         navigate_creator(page)
         click_tab_by_text(page, SELECTORS["video_tab_text"])
         resolve_upload_input(page).set_input_files(video)
-        resolve_title_input(page).fill(args.title)
+        page.wait_for_timeout(2500)
+        fill_editor(resolve_title_input(page), args.title)
         fill_editor(resolve_content_editor(page), args.content)
         wait_for_publish_button(page)
         save_screenshot(page, args.screenshot)
@@ -1328,6 +1582,8 @@ def dispatch(page, args: argparse.Namespace) -> dict[str, Any]:
         return run_respond_comment(page, args)
     if args.command == "publish-images":
         return run_publish_images(page, args)
+    if args.command == "publish-text-image":
+        return run_publish_text_image(page, args)
     if args.command == "publish-video":
         return run_publish_video(page, args)
     raise ValueError(f"unsupported command: {args.command}")
