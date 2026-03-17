@@ -1,0 +1,6 @@
+.DS_Store
+download.log
+ds_update.log
+qrcode.png
+
+playwright-browser-ops/tmp/
