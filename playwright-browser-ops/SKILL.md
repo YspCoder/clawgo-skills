@@ -29,6 +29,7 @@ Primary script:
 - `scripts/xiaohongshu_ops.py` for Xiaohongshu-specific login and publishing flows
 - `scripts/bilibili_ops.py` for Bilibili login state and video publishing through `biliup`
 - `scripts/douyin_ops.py` for Douyin creator-center login and video publishing through Playwright
+- `scripts/kuaishou_ops.py` for Kuaishou creator-center login and video publishing through Playwright
 - `scripts/browser_manager.py` for named accounts, isolated browser profiles, and tracked browser instances
 - `scripts/media_downloader.py` for downloading remote images or videos before browser upload
 
@@ -53,6 +54,8 @@ python3 scripts/bilibili_ops.py --account main login
 python3 scripts/bilibili_ops.py --account main publish-video --title "标题" --content "简介" --tag 自动化 --video /abs/path/demo.mp4
 python3 scripts/douyin_ops.py --account main login
 python3 scripts/douyin_ops.py --account main publish-video --title "标题" --content "简介" --tag 自动化 --video /abs/path/demo.mp4
+python3 scripts/kuaishou_ops.py --account main login
+python3 scripts/kuaishou_ops.py --account main publish-video --title "标题" --content "简介" --tag 自动化 --video /abs/path/demo.mp4
 ```
 
 Environment requirements:
@@ -113,5 +116,6 @@ Use the reference file [references/default-operations.md](references/default-ope
 - Default operation recipes: [references/default-operations.md](references/default-operations.md)
 - Bilibili integration notes: [references/bilibili.md](references/bilibili.md)
 - Douyin integration notes: [references/douyin.md](references/douyin.md)
+- Kuaishou integration notes: [references/kuaishou.md](references/kuaishou.md)
 - Xiaohongshu integration notes: [references/xiaohongshu.md](references/xiaohongshu.md)
 - Platform expansion research: [references/platform-expansion-research.md](references/platform-expansion-research.md)
